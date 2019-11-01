@@ -876,7 +876,8 @@ def p_user_op_decl(p):
 			vv = vv['type']
 		ty_vars |= type_variables(vv)
 	where_vars, where_kind = p[8] if p[8]!=None else ([],'')
-	assert ty_vars >= set(where_vars)
+	if not (ty_vars >= set(where_vars)):
+		print('where incorrect') ## this is not a syntax problem
 	if p[9] != None: val['specialize'] = p[9]
 	if p[10] != None: val.update(p[10])
 	tvl = [[tn,(where_kind if tn in where_vars else '')] for tn in ty_vars]

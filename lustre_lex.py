@@ -194,7 +194,7 @@ def t_INTEGER(t):
 
 def t_error(t):
 	print("Bad char '%s'" % t.value[0])
-	assert False
+	# assert False
 	t.lexer.skip(1)
 	
 lexer = lex.lex(optimize=0)

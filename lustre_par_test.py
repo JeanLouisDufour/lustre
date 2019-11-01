@@ -45,9 +45,10 @@ def lustre_check_expr(e, oper, package, pack_path=[]):
 
 def parse_file(fn):
 	""
-	print('*******************    {}       ******************'.format(fn))
+	print('**  {}  **'.format(fn))
 	if True:
-		f = codecs.open(fn, 'r')
+		encoding = 'latin-1' # 'utf-8'
+		f = codecs.open(fn, 'r',encoding=encoding)
 		prg = f.read()
 		f.close()
 		try:
@@ -64,7 +65,7 @@ def parse_file(fn):
 fn_list = ( \
    'lustre_test_KO.scade', \
    'lustre_test_OK.scade', \
-   'E:\\', \
+   'F:\\', \
    )
 
 for fn in fn_list:
