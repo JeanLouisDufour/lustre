@@ -1,0 +1,26 @@
+/* Errors due to multiple declaration via open */
+package P1x
+type foo = int16;
+end;
+open P1x;
+const foo: bool = true;
+--
+/* Private visibility status: type t is unknown outside P1. This program raises an error */
+package P1a
+type private t= int64;
+const c:t=0;
+end;
+open P1a;
+const d:t= c + 1;
+--
+/* Package opening is not transitive */
+package P1y
+package P2
+const foo: int32 = 0;
+end;
+open P2;
+const bar: int32 = foo + 1;
+end;
+open P1y;
+const foobar: int32 = foo * 2;
+--
