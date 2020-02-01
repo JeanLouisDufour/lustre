@@ -1,5 +1,5 @@
 import lustre_par as lp
-import codecs, json, os # , os.path
+import codecs, glob, json, os
 
 def tok2str(t):
 	""
@@ -43,46 +43,62 @@ def lustre_check_expr(e, oper, package, pack_path=[]):
 	else:
 		assert False
 
-def parse_file(fn):
+###########################
+
+# def test_str(s):
+	# ""
+	# result = lp.parser.parse(s)
+	# return result
+test_str = lp.parse_str
+	
+# def test_file(fn, save_json = False):
+	# ""
+	# print('**  {}  **'.format(fn))
+	# encoding = 'latin-1' # 'utf-8'
+	# fd = codecs.open(fn, 'r',encoding=encoding)
+	# s = fd.read()
+	# fd.close()
+	# js = test_str(s)
+	# if save_json:
+		# assert fn.endswith('.scade')
+		# fnjs = fn[:-5] + 'json'
+		# fd = codecs.open(fnjs, 'w', encoding = 'utf-8')
+		# if False:
+			# json.dump(js, fd, indent=4)
+		# else:
+			# s = json.dumps(js, indent=4)
+			# if js != json.loads(s):
+				# print('************* PB JSON ****************')
+			# fd.write(s)
+		# fd.close()
+test_file = lp.parse_file
+		
+homedirs = [ os.path.join(os.getenv('USERPROFILE', r'C:\Users\Public'), 'Documents'), 'D:','E:','F:']
+scadedirs = [h+r'\scade' for h in homedirs if os.path.isdir(h+r'\scade')]
+
+for sd in scadedirs:
+	for fn in glob.glob(sd+r'\**\kcg_xml_filter_out.scade', recursive=True):
+		test_file(fn, True)
+	assert False
+
+def test_dir(fn):
 	""
-	print('**  {}  **'.format(fn))
-	if True:
-		encoding = 'latin-1' # 'utf-8'
-		f = codecs.open(fn, 'r',encoding=encoding)
-		prg = f.read()
-		f.close()
-		try:
-			result = lp.parser.parse(prg)
-		except:
-			result = None
-			print("BEGIN DUMP")
-			for symb in lp.parser.symstack:
-				print(symb)
-			print(lp.parser.statestack)
-			print("END DUMP")
-			raise
+	for root, dirs, files in os.walk(fn):
+		for file in files:
+			if file.endswith('.scade'):
+				fn = os.path.join(root,file)
+				test_file(fn)
 
 fn_list = ( \
-   'lustre_test_KO.scade', \
-   'lustre_test_OK.scade', \
-   'F:\\', \
-   )
+   '_lustre_test_KO.scade', \
+   '_lustre_test_OK.scade', \
+   r'C:\Program Files\ANSYS Inc', \
+   ) + scadedirs
 
 for fn in fn_list:
-	#with open(fn, 'r', encoding='utf-8') as f:
-	#f = codecs.open(fn, 'r', encoding='utf-8')
 	if os.path.isfile(fn):
-		parse_file(fn)
-#		assert fn.endswith('.scade')
-#		js_file = fn[:-5] + 'json'
-#		f = open(js_file, 'w')
-#		json.dump(result, f, indent=4)
-#		f.close()
+		test_file(fn)
 	elif os.path.isdir(fn):
-		for root, dirs, files in os.walk(fn):
-			for file in files:
-				if file.endswith('.scade'):
-					fn = os.path.join(root,file)
-					parse_file(fn)
+		test_dir(fn)
 	else:
 		print('!!!!! NOT FOUND : '+fn)

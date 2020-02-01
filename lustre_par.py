@@ -1,5 +1,5 @@
 import ply.yacc as yacc
-# import ply2yacc
+import ply2yacc
 import functools
 # tokens : Get the token map from the lexer.  This is required.
 # lexer : permit to force yacc to use the good lexer (in case of multiple parsers)
@@ -150,7 +150,7 @@ def p_control_block(p):
 	p[0] = p[1]
 
 def p_data_def(p):
-	"""data_def : equation_SC
+	"""data_def : equation_raw ';'
 		| scope
 	"""
 	p[0] = p[1]
@@ -201,9 +201,15 @@ def p_emission_body(p):
 def p_eqs(p):
 	"eqs : LET equation_SC_STAR TEL"
 	p[0] = (p[2], p.lineno(1), p.lineno(3))
-	
+
 def p_equation(p):
-	"""equation : simple_equation
+	"""equation : equation_raw
+		| HASH_PRAGMA equation_raw
+	"""
+	p[0] = p[1] if len(p)==2 else p[2] # TBC
+	
+def p_equation_raw(p):
+	"""equation_raw : simple_equation
 		| ASSUME ID ':' expr
 		| GUARANTEE ID ':' expr
 		| emission
@@ -291,6 +297,17 @@ def p_expr2e(p):
 	#		| expr2e HASH_INTEGER DIV expr2f
 	p[0] = p[1] if len(p)==2 else [p[2],None,p[1],p[3]]
 
+"""
+Priorities of REVERSE / @ / ^ / .[.] :
+reverse aI2 @ reverse aI1     ==  reverse (aI2 @ reverse aI1)   (ex. LRM p. 8.94)
+reverse reverse foo           ==  reverse (reverse foo)
+i2 @ 1 ^ 2   donne "ERR_109 ... should be an array (2nd arg of op @ is an array)",  i2 @ (1^2)  est OK
+		DONC a ete parse comme (i2 @ 1) ^ 2
+1 ^ 2 @ i2   donne "ERR_105 ... should be a size expression",  (1^2) @ i2  est OK
+		DONC a ete parse comme 1 ^ (2 @ i2)
+reverse 1 ^ 2         ==  reverse (1^2)
+"""
+
 def p_expr2f(p):
 	"""expr2f : '-' expr2f
 		| '+' expr2f
@@ -298,6 +315,7 @@ def p_expr2f(p):
 		| REVERSE expr2f
 		| INT expr2f
 		| REAL expr2f
+		| NOT expr2f
 		| expr2g
 	"""
 	#		| HASH_INTEGER '-' expr2f
@@ -317,6 +335,9 @@ def p_expr2g(p):
 	p[0] = p[1] if len(p)==2 else [p[2],None,p[1],p[3]]
 	
 def p_expr2h(p):
+	"""expr2h : expr2i
+	"""
+	pass
 	"""expr2h : NOT expr2h
 		| expr2i
 	"""
@@ -332,10 +353,16 @@ def p_expr2i(p):
 	
 def p_expr2j(p):
 	"""expr2j : expr2j '@' expr2k
+		| expr2j '@' REVERSE expr2k
+		| expr2k
+	"""
+	pass
+	"""expr2j : expr2j '@' expr2k
 		| expr2k
 	"""
 	#		| expr2j HASH_INTEGER '@' expr2k
-	p[0] = p[1] if len(p)==2 else [p[2],None,p[1],p[3]]
+	#p[0] = p[1] if len(p)==2 else [p[2],None,p[1],p[3]]
+	p[0] = p[1] if len(p)==2 else [p[2],None,p[1],p[3]] if len(p)==4 else [p[2],None,p[1],[p[3],None,p[4]]]
 
 def p_expr2k(p):
 	"""expr2k : expr2k DOT ID
@@ -402,7 +429,7 @@ def p_expr2x_5(p):
 	p[0] = [p[2], None, p[3], p[5]]
 	
 def p_expr2x_6(p):
-	"expr2x : HASH '(' expr_SEQ ')'"
+	"expr2x : '#' '(' expr_SEQ ')'"
 	p[0] = [p[1]]+p[3]
 
 def p_expr2x_7(p):
@@ -467,7 +494,7 @@ def p_field_decl(p):
 	"field_decl : IDdecl ':' type_expr"
 	[pragmas, name] = p[1]
 	if pragmas != []:
-		warning('lustre_par: field_decl: ignoring pragmas: '+' | '.join(pragmas))
+		pass # warning('lustre_par: field_decl: ignoring pragmas: '+' | '.join(pragmas))
 	p[0] = (name,p[3])
 
 def p_fork(p):
@@ -649,6 +676,7 @@ def p_package_decl(p):
 	dl = flatten(p[4])
 	val = dl2olpddd(dl)
 	val[''] = 'package'
+	val[' linenos'] = [p.lineno(1), p.lineno(5)]
 	[pragmas, name] = p[3]
 	if p[2] == 'private': val['private'] = None ## flag
 	if pragmas != []: val['#'] = pragmas
@@ -770,7 +798,7 @@ def p_spec_decl(p):
 	p[0] = p[2]
 	
 def p_state_decl(p):
-	"state_decl : INITIAL_OPT FINAL_OPT STATE ID unless_trans_OPT data_def until_trans_OPT"
+	"state_decl : INITIAL_OPT FINAL_OPT STATE IDdecl unless_trans_OPT data_def until_trans_OPT"
 	p[0] = p[1]   ### BAD
 
 def p_state_machine(p):
@@ -788,7 +816,7 @@ def p_target(p):
 	p[0] = p[1]
 	
 def p_transition(p):
-	"transition : IF expr arrow"
+	"transition : HASH_PRAGMA_STAR IF expr arrow"
 	p[0] = p[1]   ### BAD
 	
 def p_type_block(p):
@@ -1346,26 +1374,38 @@ def to_json(fn, js_file=None):
 	
 # Build the parser
 parser = yacc.yacc(optimize=0)
-# ply2yacc.yacc(optimize=0)
+ply2yacc.yacc(optimize=0)
 
-if False:
-	prg = """node bar
-	world
-	foo
-	bar
-	"""
-	try:
-		result = parser.parse(prg)
-	except:
-		2+2
-	#
-	prg = """node foo
-	world
-	foo
-	bar
-	"""
-	try:
-		result = parser.parse(prg)
-	except:
-		2+2
+def parse_str(s):
+	""
+	result = parser.parse(s)
+	return result
+
+def parse_file(fn, save_json = False):
+	""
+	# import codecs
+	print('**  {}  **'.format(fn))
+	encoding = 'latin-1' # 'utf-8'
+	fd = open(fn, 'r',encoding=encoding)
+	s = fd.read()
+	fd.close()
+	js = parse_str(s)
+	if save_json:
+		assert fn.endswith('.scade')
+		fnjs = fn[:-5] + 'json'
+		fd = open(fnjs, 'w', encoding = 'utf-8')
+		if False:
+			json.dump(js, fd, indent=4)
+		else:
+			s = json.dumps(js, indent=4)
+			if js != json.loads(s):
+				print('************* PB JSON ****************')
+			fd.write(s)
+		fd.close()
+	return js
 	
+if __name__ == "__main__":
+	for fn in ('lustre_test_typ_OK.scade', \
+		r'F:\scade\Cas_etude_SafranHE_2_ATCU_S1905\MODEL\cvob_arrano1g4\c90100_modele\PAR\determiner_modes_generaux\sc\C_determiner_modes_generaux_KCG64\kcg_xml_filter_out.scade'):
+		result = parse_file(fn)
+		_ = 2+2
