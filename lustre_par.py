@@ -544,8 +544,10 @@ def p_iterator(p):
 		| MAPFOLDI INTEGER
 	"""
 	if len(p)>2:
-		print('WARNING : '+str(p[1:]))
-	p[0] = p[1] # if len(p)==2 else p[1:]
+		# print('WARNING : '+str(p[1:]))
+		p[0] = p[1:]
+	else:
+		p[0] = p[1]
 
 def p_label_expr(p):
 	"label_expr : ID ':' expr"
@@ -642,6 +644,9 @@ def p_operator_4(p):
 		val = {'if':p[8]}
 		if len(p) >= 11: val['default'] = p[10]
 		p[0] = [p[2],p[3],p[5], val]
+	elif isinstance(p[2],list):
+		op, cnt = p[2]
+		p[0] = [op,p[3],p[5],{'acc_nb':cnt}]
 	else:
 		p[0] = [p[2],p[3],p[5]]
 		

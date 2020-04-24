@@ -1,7 +1,10 @@
 # coding: utf-8
 import lustre_par as lp
-import objdiff
-import functools
+import lustre_path #G_prog = G_curr_pack = G_curr_path = None # liste de noms de packages
+from lustre_path import get_pack_at_absolute_path, path_resolution
+# INVARIANT :
+# G_curr_pack == get_pack_at_absolute_path(G_curr_path)
+
 from collections import ChainMap
 ################
 import sys
@@ -11,83 +14,14 @@ else:
 	STRING_CLASSES = (str,)
 ################
 
-G_prog = G_curr_pack = None
-G_curr_path = None # liste de noms de packages
 G_curr_env = G_curr_env2path = None
-
-# INVARIANT :
-# G_curr_pack == get_pack_at_absolute_path(G_curr_path)
 
 C_numeric_kind = {'numeric', 'float', 'integer', 'signed', 'unsigned'}
 
-def get_pack_at_absolute_path(path):
-	"return pack (donc dict) ou None"
-	if isinstance(path, str):
-		path = [path]
-	pack = G_prog
-	for p in path:
-		pack = pack.get('package',{}).get(p)
-		if pack == None:
-			break
-	return pack
-
-def path_resolution(p):
-	"""
-	p est un path Lustre, c.a.d. soit "toto", soit ['::', ..., "toto"]
-	return (pack, abs_path) ou (None, None)
-	abs_path n'est pas un path Lustre mais une liste de noms de packages
-	"""
-	""" LRM § 3.2
-A path is denoted by a list of identifiers separated by two colons: Id1::Id2::...
-::Idn. This path is valid if every identifier refers to a package name, and if the package
-Idn is declared into the package Idn-1, and so on. Resolving a path consists in
-    PHASE 1 : Id1
-searching for an occurrence of Id1 in the subpackages of the current context. If Id1
-does not belong to this package list, then it is searched in the subpackages of the father
-context or in the father of the father context, until it is found.
-    PHASE 2 : Id2 ...
-Once this package name is
-found, the algorithm searches Id2 in Id1 subpackages, then Id3 in Id2 subpackages,
-and so on.
-	"""
-	# Phase 0 : p : path Lustre -> path 'compile' (donc liste)
-	if isinstance(p,str):
-		id1 = p; id_tail = []; p = [id1]
-	else:
-		assert isinstance(p,list) and len(p)>=2 and p[0]=='::' \
-			and all(s.isidentifier() for s in p[1:]), p
-		id1 = p[1]; id_tail = p[2:]; p = p[1:]
-	# Phase 1
-	assert G_curr_pack == get_pack_at_absolute_path(G_curr_path)
-	pa1 = G_curr_pack.get('package',{}).get(id1)
-	if pa1 != None:
-		pa1_path = G_curr_path + [id1]
-	else:
-		for i in range(-1, -len(G_curr_path)-1,-1):
-			ancestor_path = G_curr_path[:i]
-			ancestor_pack = get_pack_at_absolute_path(ancestor_path)
-			pa1 = ancestor_pack.get('package',{}).get(id1)
-			if pa1 != None:
-				pa1_path = ancestor_path + [id1]
-				break
-	if pa1 == None:
-		print("path_resolution: {} not found".format(p))
-		return None,None
-	# Phase 2
-	for idx in id_tail:
-		pa1 = pa1.get('package',{}).get(idx)
-		pa1_path += [idx]
-		if pa1 == None:
-			print("path_resolution: {} not found".format(p))
-			return None,None
-	assert pa1 == get_pack_at_absolute_path(pa1_path) \
-		and pa1_path[-len(p):] == p
-	return pa1, pa1_path
-
 def chk_main(pack):
 	""
-	global G_prog
-	G_prog = pack
+	# global G_prog
+	lustre_path.G_prog = pack
 	chk_pack_enums(pack)
 	chk_pack_opens(pack)
 
@@ -102,9 +36,10 @@ def chk_pack_opens(pack, path = [], env = {}, env2path = {}):
 		if xt == 'const':
 			xt = d['type']
 		return xt
-	global  G_curr_pack, G_curr_path, G_curr_env, G_curr_env2path
+	# global  G_curr_pack, G_curr_path
+	global G_curr_env, G_curr_env2path
 	assert isinstance(pack, dict) and pack.get('')=='package' and isinstance(path, list)
-	G_curr_pack = pack; G_curr_path = path
+	lustre_path.G_curr_pack = pack; lustre_path.G_curr_path = path
 	# open
 	#open_al = []
 	#open_cm = ChainMap({n:xtype(v) for n,v in pack.items() if n not in ('','open','package','#') and n[0] != ' '})
@@ -141,9 +76,9 @@ def chk_pack_enums(pack, path = []):
 		- nouveaux attributs ' decls' et ' public'
 		- les2 xxx2path differents : profondeur pour decls, path complet pour public
 	"""
-	global  G_curr_pack, G_curr_path
+	#global  G_curr_pack, G_curr_path
 	assert isinstance(pack, dict) and pack.get('')=='package' and isinstance(path, list)
-	G_curr_pack = pack; G_curr_path = path
+	#G_curr_pack = pack; G_curr_path = path
 	# open
 	pass
 	# pack
@@ -203,10 +138,6 @@ def chk_str(s):
 #		# assert False
 	return olpddd, G_calltree
 
-def INH_chk_body(b, env):
-	""
-	pass
-
 def chk_decl(name, d): # const function group node package sensor type
 	"""
 	['const', pragmas, ext, typ, val]
@@ -215,7 +146,7 @@ def chk_decl(name, d): # const function group node package sensor type
 	['sensor', pragmas, typ]
 	['type', pragmas, ext, def, kind]
 	"""
-	p_path = G_curr_path
+	p_path = lustre_path.G_curr_path
 	assert isinstance(d,dict), (name, d, p_path)
 	kind = d['']
 	private = 'private' in d
@@ -355,25 +286,6 @@ def chk_decl(name, d): # const function group node package sensor type
 		assert False, kind
 	return (name, d)
 
-def INH_chk_package(olpddd, package_path):
-	"""
-	package_path : [] au top, [ ... , toto] quand on analyse la def de toto
-	"""
-	assert isinstance(olpddd, dict) and olpddd[''] == 'package'
-	### 1/3 verif des open
-	for op in olpddd.get('open',[]):
-		(pd,pp) = get_package(op, package_path)
-		if pd==None:
-			print('??? open unknown : '+op+' ???')
-	### 2/3 verif des packages
-	for pn,pv in olpddd.get('package',{}).items():
-		chk_package(pv, package_path+[pn])
-	### 3/3 verif des decl
-	for dn, dv in olpddd.items():
-		if dn in ('','open','package','#') or dn[0] == ' ': continue
-		# assert len(dv)>=3 and dv[0] in (None,'private')
-		chk_decl(dn, dv, package_path)
-
 G_expr_ctx = {}
 
 def chk_expr(e, p_path, env={}):
@@ -420,6 +332,18 @@ def chk_expr(e, p_path, env={}):
 				chk_expr(op[1], p_path, env)
 				chk_expr(op[2], p_path, env)
 				_ = 2+2
+			elif op[0] in ('mapfold','mapfoldi'):
+				assert len(op) in (3,4)
+				chk_expr(op[1], p_path, env)
+				chk_expr(op[2], p_path, env)
+				if len(op) == 4:
+					assert isinstance(op[3]['acc_nb'], int)
+			elif op[0] == 'foldw':
+				assert len(op) == 4
+				chk_expr(op[1], p_path, env)
+				chk_expr(op[2], p_path, env)
+				assert isinstance(op[3],dict) and len(op[3]) == 1
+				chk_expr(op[3]['if'], p_path, env)
 			elif op[0] == 'make':
 				assert len(op) == 2
 				mty = op[1]
@@ -442,9 +366,14 @@ def chk_expr(e, p_path, env={}):
 			(pack, abs_path) = path_resolution(e[:-1])
 			decl = pack[' public'].get(e[-1])
 			if decl:
-				assert decl[''] == 'const', decl
+				assert decl[''] in ('const','function'), decl
 			else:
 				assert False, e
+		elif op == '<<>>':
+			assert len(e) >= 3, e
+			chk_expr(e[1], p_path, env)
+			for sz in e[2:]:
+				chk_expr(sz, p_path, env)
 		elif op in ('-unaire','pre','reverse'): # unaires polymorphes
 			assert len(e) == 3 and e[1]==None
 			chk_expr(e[2], p_path, env)
@@ -573,7 +502,7 @@ def chk_expr(e, p_path, env={}):
 		if e in ('false','true','_'):
 			pass
 		elif e[0] == '$':
-			assert e[-1] == '$' and e[1:-1] in ('=','>','and'), e
+			assert e[-1] == '$' and e[1:-1] in ('=','<>','>','<','>=','<=','+','-','*','and','or','mod'), e
 		elif e in env: ### prioritaire sur G_curr_env
 			pass
 		elif e in G_curr_env:
@@ -585,135 +514,19 @@ def chk_expr(e, p_path, env={}):
 			_ = 2+2
 			assert False, e
 
-def INH_chk_clock_expr(e, p_path):
-	""
-	chk_expr(e, p_path)
-
-def INH_is_id(e,ctx=G_ctx):
-	""
-	if isinstance(e, STRING_CLASSES):
-		return True
-	else:
-		assert isinstance(e, list)
-		return len(e)>=3 and e[0]=='::' and all([isinstance(id, STRING_CLASSES) for id in e[1:]])
-
-def INH_get_package(op, p_path): ### search in the PN (Package Namespace)
-	""
-	res = None,None
-	if isinstance(op, STRING_CLASSES):
-		pack = G_ctx
-		op_path = []
-		if op in pack.get('package',{}):
-			res = pack['package'][op], op_path+[op]
-		else:
-			for pn in p_path:
-				pack = pack['package'][pn]
-				op_path.append(pn)
-				if op in pack.get('package',{}):
-					res = pack['package'][op], op_path+[op]
-					break
-	else:
-		assert isinstance(op, list) and len(op)>=3 and op[0]=='::'
-		(pack,pp) = get_package(op[1], p_path)
-		if pack:
-			for c in op[2:]:
-				if c in pack.get('package',{}):
-					pp.append(c)
-					pack = pack['package'][c]
-				else:
-					pp = None
-					pack = None
-					break
-			res = pack,pp
-	return res
-
 def get_declaration(dn, p_path): ### search in the DN (Declaration Namespace)
 	""
 	tp = None
 	if isinstance(dn, STRING_CLASSES):
 		assert dn.isidentifier(), dn
 		td = G_curr_env.get(dn)
-		if td:
-			_ = 2+2
-		else:
-			assert False, dn
 	elif isinstance(dn, list) and dn[0]=='::':
 		(pack, tp) = path_resolution(dn[:-1])
 		td = pack.get(dn[-1])
 	else:
 		assert False, (dn, p_path)
+	assert td, (dn, p_path)
 	return td,tp	
-#	""
-#	res = None,None
-#	if isinstance(dn, STRING_CLASSES):
-#		pack = G_ctx
-#		op_path = []
-#		if dn in pack:
-#			res = pack[dn], op_path+[dn]
-#		else:
-#			for pn in p_path:
-#				pack = pack['package'][pn]
-#				op_path.append(pn)
-#				if dn in pack:
-#					res = pack[dn], op_path+[dn]
-#					break
-#	else:
-#		assert isinstance(dn, list) and len(dn)>=3 and dn[0]=='::'
-#		(pack,pp) = get_package(dn[1], p_path)
-#		if pack:
-#			for c in dn[2:-1]:
-#				if c in pack.get('package',{}):
-#					pp.append(c)
-#					pack = pack['package'][c]
-#				else:
-#					pack = None
-#		if pack:
-#			if dn[-1] in pack:
-#				res = pack[dn[-1]], pp+[dn[-1]]
-#	return res
-
-def INH_chk_operator(e, p_path, env):
-	""
-	if is_id(e):
-		pass
-	else:
-		assert isinstance(e, list) and e[0]!='::'
-		if e[0]=='<<.>>':
-			assert len(e)==3
-			chk_operator(e[1], p_path, env)
-			for a in e[2]:
-				chk_expr(a, p_path)
-		elif e[0] in ('make','flatten'):
-			assert len(e)==2
-			assert isinstance(e[1], STRING_CLASSES)
-		elif e[0]=='activate':
-			assert len(e)==5
-			chk_operator(e[1], p_path, env)
-			chk_expr(e[2], p_path, env)
-			if e[3]!=None:
-				chk_expr(e[3], p_path, env)
-			assert isinstance(e[4],bool)
-		elif e[0] in ('map','mapi','fold','foldi','foldw','mapfold','restart'):
-			assert len(e)==3
-			chk_operator(e[1], p_path, env)
-			chk_expr(e[2], p_path, env)
-		else:
-			assert False
-
-# def get_package(pn, cur_packname, curr_olpddd, ctx):
-# 	""
-# 	assert isinstance(pn, STRING_CLASSES)
-# 	if pn in curr_olpddd[1]:
-# 		pd = curr_olpddd[1][pn]
-# 		return pd[3]
-# 	else:
-# 		for (packname, olpddd) in ctx:
-# 			if pn == packname:
-# 				return olpddd
-# 			elif pn in olpddd[1]:
-# 				pd = olpddd[1][pn]
-# 				return pd[3]
-# 		assert False
 
 """
 Rappel : type_def ::= type_expr | enum_def
@@ -790,7 +603,7 @@ def chk_type_expr(typ, par_env={}, collect=False):
 			assert len(typ)==3
 			(btd,btp) = chk_type_expr(typ[1], par_env, collect)
 			assert btd
-			chk_expr(typ[2], G_curr_path, par_env)
+			chk_expr(typ[2], lustre_path.G_curr_path, par_env)
 			td = typ
 		else:
 			assert False, typ
@@ -812,9 +625,12 @@ def chk_type_def(typ):
 
 if __name__ == "__main__":
 	for fn in ( \
-#		'lustre_test_typ_OK.scade', \
-#		r'F:\scade\Cas_etude_SafranHE_2_ATCU_S1905\MODEL\cvob_arrano1g4\c90100_modele\PAR\determiner_modes_generaux\sc\C_determiner_modes_generaux_KCG64\kcg_xml_filter_out.scade', \
-#		r'F:\scade\Cas_etude_SafranHE_2_ATCU_S1905\MODEL\cvob_arrano1g4\c90100_modele\PAR\calculer_limites_et_regimes\sc\C_calculer_limites_et_regimes_KCG64\kcg_xml_filter_out.scade', \
+		'lustre_test_typ_OK.scade', \
+		r'F:\scade\Cas_etude_SafranHE_2_ATCU_S1905\MODEL\cvob_arrano1g4\c90100_modele\PAR\determiner_modes_generaux\sc\C_determiner_modes_generaux_KCG64\kcg_xml_filter_out.scade', \
+		r'F:\scade\Cas_etude_SafranHE_2_ATCU_S1905\MODEL\cvob_arrano1g4\c90100_modele\PAR\calculer_limites_et_regimes\sc\C_calculer_limites_et_regimes_KCG64\kcg_xml_filter_out.scade', \
+		'test/scheduling/kcg_xml_filter_out_1.scade', \
+		'test/scheduling/kcg_xml_filter_out_2.scade', \
+		'test/scheduling/kcg_xml_filter_out_3.scade', \
 		'test/scheduling/kcg_xml_filter_out.scade', \
 		):
 		result = chk_file(fn)
