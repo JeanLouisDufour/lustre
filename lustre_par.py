@@ -474,6 +474,12 @@ def p_expr3_3(p):
 	op = p[1]
 	args = p[3]
 	if op in ('fby', 'merge', 'transpose'):
+		"""
+		les seules utilisations de ; DANS une expression :
+		fby ( list ; expr ; list )
+		merge ( expr ; list {{ ; list }} )
+		transpose ( expr ; INTEGER; INTEGER)
+		"""
 		assert len(args)>=3
 		p[0] = [op,None]+args
 	elif args == None:
@@ -804,7 +810,8 @@ def p_spec_decl(p):
 	
 def p_state_decl(p):
 	"state_decl : INITIAL_OPT FINAL_OPT STATE IDdecl unless_trans_OPT data_def until_trans_OPT"
-	p[0] = p[1]   ### BAD
+	pragmas, name = p[4]
+	p[0] = (name, [pragmas] + p[1:3] + p[5:])
 
 def p_state_machine(p):
 	"state_machine : AUTOMATON ID_OPT state_decl_PLUS"
@@ -818,11 +825,11 @@ def p_target(p):
 	"""target : RESTART ID
 		| RESUME ID
 	"""
-	p[0] = p[1]
+	p[0] = p[1:]
 	
 def p_transition(p):
 	"transition : HASH_PRAGMA_STAR IF expr arrow"
-	p[0] = p[1]   ### BAD
+	p[0] = p[3:]
 	
 def p_type_block(p):
 	"type_block : TYPE type_decl_SC_STAR"
@@ -880,7 +887,7 @@ def p_typevar(p):
 
 def p_unless_trans(p):
 	"unless_trans : UNLESS transition_SC_PLUS"
-	p[0] = p[1]   ### BAD
+	p[0] = p[2]
 
 def p_until_trans(p):
 	"until_trans : UNTIL transition_SC_STAR synchro_trans_OPT"

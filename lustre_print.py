@@ -29,6 +29,97 @@ for i,ol in enumerate(C_prec):
 		assert o not in C_prec_d
 		C_prec_d[o] = i
 
+def clkprb(vn,vt):
+	""
+	if isinstance(vt,dict):
+		if 'probe' in vt:
+			vn = 'probe '+vn
+		if 'clock' in vt:
+			vn = 'clock '+vn
+	return vn
+
+def scope(d):
+	""
+	body_l = []
+	if True:
+		signal = d.get('signal')
+		var = d.get('var',{})
+		let = d.get('let',[])
+		if True:
+			if signal:
+				body_l.append('sig {};'.format(','.join(signal)))
+			if var:
+				body_l.append('var')
+				body_l.extend('  {} : {};'.format(clkprb(vn,var[vn]), chk_type_expr(var[vn])) for vn in sorted(var))
+			if signal or var or len(let) > 1:
+				body_l.append('let')
+			for eq in let: # = lhs rhs
+				if eq[0] == '=':
+					assert len(eq) in (3,4), eq
+					lhs = eq[1]
+					assert isinstance(lhs,list), lhs
+					lhs_s = ','.join(lhs)
+					rhs = eq[2]
+					rhs_s,_ = chk_expr(rhs)
+					if len(eq) == 4:
+						assert isinstance(eq[3],dict), eq
+					body_l.append('  {}= {};'.format(lhs_s,rhs_s))
+				elif eq[0] == 'activate': # ACTIVATE ID_OPT if_ou_match_block
+					assert len(eq) == 4 and (eq[1] == None or eq[1].isidentifier()), eq
+					if eq[2][0] == 'if':
+						e_s, _ = chk_expr(eq[2][1])
+						bl = eq[2][2:]
+						assert len(bl)==2, bl
+						for b in bl:
+							if isinstance(b, list):
+								assert b[0] in ('=','if'), b
+							else:
+								assert isinstance(b,dict)
+								# var
+								for c in b.get('let',[]):  ## parfois absent ????
+									assert isinstance(c,list) and c[0] in ('=','activate'), c
+						_ = 2+2
+					elif eq[2][0] == 'when':
+						e_s, _ = chk_expr(eq[2][1])
+						for a,b in eq[2][2]:
+							assert a.isidentifier(), a
+							a_s,_ = chk_expr(a)
+							if isinstance(b,list):
+								assert b[0] == '=', b
+							else:
+								assert isinstance(b,dict)
+								# var
+								for c in b.get('let',[]):  ## parfois absent ????
+									assert isinstance(c,list) and c[0] in ('=','activate'), c
+					else:
+						assert False, eq
+					# assert all((v in out_env or v in var_env or v=='..') for v in eq[3]), eq
+				elif eq[0] in ('assume','guarantee'):
+					assert len(eq) == 3 and eq[1].isidentifier(), eq
+					e_s,_ = chk_expr(eq[2])
+					body_l.append('  {} {}: {};'.format(eq[0], eq[1],e_s))
+				elif eq[0] == 'automaton':
+					assert len(eq) == 4 and (eq[1] == None or eq[1].isidentifier()), eq
+					body_l.append('  automaton '+(eq[1] or ''))
+					for st_name,st_def in eq[2]:
+						pragmas, ini_opt, fin_opt, unless_opt, data_def, until_opt = st_def
+						s = 'state ' + st_name
+						if fin_opt: s = 'final '+s
+						if ini_opt: s = 'initial '+s
+						body_l.append(s)
+						sl = scope(data_def)
+						body_l.extend(sl)
+					#assert all((v in out_env or v in var_env or v=='..') for v in eq[3]), eq
+					body_l.append('  returns {};'.format(','.join(eq[3])))
+				elif eq[0] == 'emit':
+					assert len(eq) == 2, eq
+					_ = 2+2
+				else:
+					assert False
+			if signal or var or len(let) > 1:
+				body_l.append('tel')
+	return body_l
+
 def decl(name, d): # const function group node package sensor type
 	"""
 	['const', pragmas, ext, typ, val]
@@ -37,7 +128,9 @@ def decl(name, d): # const function group node package sensor type
 	['sensor', pragmas, typ]
 	['type', pragmas, ext, def, kind]
 	"""
-	print(name)
+	sl = []
+	if name == 'util_ClockCounter':
+		_ = 2+2
 	assert isinstance(d,dict), (name, d)
 	kind = d['']
 	private = 'private' in d
@@ -52,116 +145,66 @@ def decl(name, d): # const function group node package sensor type
 		t_s = chk_type_expr(typ)
 		if not imported:
 			assert value is not None
-			d_s = 'const ' + name + ' : ' + t_s + ' = ' + chk_expr(value)[0]
+			d_s = 'const ' + name + ' : ' + t_s + ' = ' + chk_expr(value)[0] + ';'
 		else:
 			assert value is None
-			d_s = 'const imported ' + name + ' : ' + t_s
-			
+			d_s = 'const imported ' + name + ' : ' + t_s + ';'
+		sl.append(d_s)
 	elif kind in ('function','node'):
 		#  ID pragmas interface_status  size_decl_OPT p_in p_out where_decl_OPT spec_decl_OPT opt_body
 		assert {'','inputs','outputs','_lineno','inputs_linenos','outputs_linenos'} <= set(d)
 		expand = any([pragma==('kcg','expand') for pragma in pragmas])
-		p_in = d['inputs']
-		inputs_s = '(' + ','.join(vn + ':' + chk_type_expr(vt) for vn,vt in p_in) + ')'
-		p_out = d['outputs']
-		outputs_s = '(' + ','.join(vn + ':' + chk_type_expr(vt) for vn,vt in p_out) + ')'
 		size_decl = d.get('sizes',[])
 		sizes_s = '<<'+','.join(size_decl)+'>>' if size_decl else ''
-		d_s = '{}{} {}{}{} returns {}'.format(kind, ' imported' if imported else '', name, sizes_s,inputs_s, outputs_s)
+		d_s = '{}{} {}{}'.format(kind, ' imported' if imported else '', name, sizes_s)
+		p_in = d['inputs']
+		inputs_s = '; '.join(clkprb(vn,vt) + ' : ' + chk_type_expr(vt) for vn,vt in p_in)
+		p_out = d['outputs']
+		outputs_s = '; '.join(clkprb(vn,vt) + ' : ' + chk_type_expr(vt) for vn,vt in p_out)
+		d_s += '({}) returns ({})'.format(inputs_s, outputs_s)
 		where_l, where_k = d.get('where', ([],None))
 		if where_k:
 			assert where_k in C_numeric_kind
 			assert len(where_l) == 1
-			d_s += ' where ...'
+			d_s += ' where {} {}'.format(where_l[0],where_k)
 		#
 		signal = d.get('signal')
 		var = d.get('var',{})
 		let = d.get('let')
 		if imported:
 			assert signal == let == None and var == {}
+			d_s += ';'
+			sl.append(d_s)
 		else:
 			assert let is not None
-			body_l = []
-			assert signal is None
-			if var:
-				body_l.append('var')
-				body_l.extend('\t{} : {};'.format(vn, chk_type_expr(var[vn])) for vn in sorted(var))
-			if len(let) > 1:
-				body_l.append('let')
-			for eq in let: # = lhs rhs
-				if eq[0] == '=':
-					assert len(eq) in (3,4), eq
-					lhs = eq[1]
-					rhs = eq[2]
-					chk_expr(rhs)
-					if len(eq) == 4:
-						assert isinstance(eq[3],dict), eq
-				elif eq[0] == 'activate': # ACTIVATE ID_OPT if_ou_match_block
-					assert len(eq) == 4 and (eq[1] == None or eq[1].isidentifier()), eq
-					if eq[2][0] == 'if':
-						chk_expr(eq[2][1])
-						bl = eq[2][2:]
-						assert len(bl)==2, bl
-						for b in bl:
-							if isinstance(b, list):
-								assert b[0] in ('=','if'), b
-							else:
-								assert isinstance(b,dict)
-								# var
-								for c in b.get('let',[]):  ## parfois absent ????
-									assert isinstance(c,list) and c[0] in ('=','activate'), c
-						_ = 2+2
-					elif eq[2][0] == 'when':
-						chk_expr(eq[2][1])
-						for a,b in eq[2][2]:
-							assert a.isidentifier(), a
-							chk_expr(a)
-							if isinstance(b,list):
-								assert b[0] == '=', b
-							else:
-								assert isinstance(b,dict)
-								# var
-								for c in b.get('let',[]):  ## parfois absent ????
-									assert isinstance(c,list) and c[0] in ('=','activate'), c
-					else:
-						assert False, eq
-					# assert all((v in out_env or v in var_env or v=='..') for v in eq[3]), eq
-				elif eq[0] in ('assume','guarantee'):
-					assert len(eq) == 3 and eq[1].isidentifier(), eq
-					chk_expr(eq[2])
-				elif eq[0] == 'automaton':
-					assert len(eq) == 4 and (eq[1] == None or eq[1].isidentifier()), eq
-					assert all(x in ('initial',None) for x in eq[2]), eq
-					#assert all((v in out_env or v in var_env or v=='..') for v in eq[3]), eq
-				elif eq[0] == 'emit':
-					assert False, eq
-				else:
-					assert False
-			if len(let) > 1:
-				body_l.append('tel')
-			d_s += '\n' + '\n'.join(body_l)
+			sl.append(d_s)
+			body_l = scope(d)
+			sl.extend(body_l)
 	elif kind == 'group':
 		assert sorted(d) == ['','types'], sorted(d)
 		types = d['types']
 		assert isinstance(types,list), types
-		d_s = 'group {} = ({})'.format(name, ','.join(chk_type_expr(t) for t in types))
+		d_s = 'group {} = ({});'.format(name, ','.join(chk_type_expr(t) for t in types))
+		sl.append(d_s)
 	elif kind == 'sensor':
 		assert set(d) <= {'','type','#'}
-		d_s = 'sensor {}: {}'.format(name, chk_type_expr(d['type']))
+		d_s = 'sensor {}: {};'.format(name, chk_type_expr(d['type']))
+		sl.append(d_s)
 	elif kind == 'type':
 		if not imported:
 			t_s = chk_type_def(d['type'])
-			d_s = 'type ' + name + ' = ' + t_s 
+			d_s = 'type ' + name + ' = ' + t_s + ';'
 		elif len(d)==2:
-			d_s = 'type imported ' + name
+			d_s = 'type imported ' + name + ';'
 		elif len(d)==3:
 			assert d['is'] in C_numeric_kind, d
-			d_s = 'type imported ' + name + ' is ' + d['is']
+			d_s = 'type imported ' + name + ' is ' + d['is'] + ';'
 		else:
 			assert False, d
+		sl.append(d_s)
 	else:
 		assert False, kind
-	return d_s
+	return sl
 
 G_expr_ctx = {}
 
@@ -218,16 +261,16 @@ def chk_expr(e, upper_prec = None):
 					op_s = '({} {} <<{}>>)'.format(op[0],fun_s, cnt_s)
 			elif op[0] == 'foldw':
 				assert len(op) == 4
-				chk_expr(op[1])
-				chk_expr(op[2])
+				e1_s,_ = chk_expr(op[1])
+				e2_s,_ = chk_expr(op[2])
 				assert isinstance(op[3],dict) and len(op[3]) == 1
-				chk_expr(op[3]['if'])
-				assert False
+				e3_s,_ = chk_expr(op[3]['if'])
+				op_s = '(foldw {} <<{}>> if {})'.format(e1_s,e2_s,e3_s)
 			elif op[0] == 'restart':
 				assert len(op) == 3
-				chk_expr(op[1])
-				chk_expr(op[2])
-				assert False
+				e1_s,_ = chk_expr(op[1])
+				e2_s, _ = chk_expr(op[2])
+				op_s = '(restart {} {})'.format(e1_s,e2_s)
 			else:
 				assert False, e
 			assert nb_inp == -1 or nb_inp == len(e)-1
@@ -260,10 +303,10 @@ def chk_expr(e, upper_prec = None):
 			else:
 				s1,p1 = chk_expr(e[2],prec)
 				s2,p2 = chk_expr(e[3],prec)
-				e_s = s1+op+s2
+				e_s = s1+' '+op+' '+s2 if op in ('mod','div') else s1+op+s2
 		elif op in ('=','<>','<','<=','>','>='): # binaires a arguments polymorphes
 			assert len(e) == 3
-			e_s = chk_expr(e[1],prec)[0] + op + chk_expr(e[2],prec)[0]
+			e_s = chk_expr(e[1],prec)[0]+ ' '  + op+ ' '  + chk_expr(e[2],prec)[0]
 		elif op in ('and','or','xor'): # binaires full static
 			assert len(e) == 3
 			e_s = chk_expr(e[1],prec)[0] + ' ' + op + ' ' + chk_expr(e[2],prec)[0]
@@ -274,7 +317,7 @@ def chk_expr(e, upper_prec = None):
 			e_s = op + ','.join(chk_expr(expr)[0] for expr in e[2]) + closing_op
 		elif op == '.[.]':
 			assert len(e) == 4 and e[1]==None
-			e_s = chk_expr(e[2],prec)[0] + '[' + chk_expr(e[3])[0]
+			e_s = chk_expr(e[2],prec)[0] + '[' + chk_expr(e[3])[0] + ']'
 		elif op == '.[..]':
 			assert len(e) == 5 and e[1]==None
 			e_s = chk_expr(e[2],prec)[0] + '[' + chk_expr(e[3])[0] + '..' + chk_expr(e[4])[0] + ']'
@@ -286,7 +329,7 @@ def chk_expr(e, upper_prec = None):
 			if not isinstance(latency[0],(int,str)):
 				assert False
 			flow_s = ','.join(chk_expr(f)[0] for f in flow)
-			latency_s = chk_expr(latency[0])
+			latency_s,_ = chk_expr(latency[0])
 			init_s = ','.join(chk_expr(f)[0] for f in init)
 			e_s = 'fby({};{};{})'.format(flow_s, latency_s, init_s)
 		elif op == 'transpose':
@@ -350,12 +393,14 @@ def chk_expr(e, upper_prec = None):
 			chk_expr(e[4])
 		elif op == ':': # 0:'T
 			assert len(e)==4 and e[1]==None
-			chk_expr(e[2])
+			value_s,_ = chk_expr(e[2])
 			assert isinstance(e[3],str)
+			e_s = '({} : {})'.format(value_s,e[3])
 		elif op == 'last':
 			assert len(e)==3
 			assert e[1]==None
-			assert isinstance(e[2],str)
+			assert isinstance(e[2],str) and e[2][0] == "'"
+			e_s = op + ' ' + e[2]
 		elif op == 'when':
 			assert len(e)==4 and e[1]==None
 			flow_s,_ = chk_expr(e[2])
@@ -426,6 +471,17 @@ def chk_type_expr(typ0, par_env={}, collect=False):
 			td = '{} ^ {}'.format(s1,s2)
 		else:
 			assert False, typ
+	if isinstance(typ0,dict):
+		# clock, probe et # sont liées à l'ID, pas au type
+		if 'default' in typ0:
+			e_s,_ = chk_expr(typ0['default'])
+			td += ' default = ' + e_s
+		if 'last' in typ0:
+			e_s,_ = chk_expr(typ0['last'])
+			td += ' last = ' + e_s
+		if 'when' in typ0:
+			e_s,_ = chk_expr(typ0['when'])
+			td += ' when ' + e_s
 	return td
 
 def chk_type_def(typ0):
@@ -442,33 +498,53 @@ def chk_type_def(typ0):
 		td = chk_type_expr(typ)
 	return td
 
-def do_file(fn):
+def chk_pack(name,pv):
 	""
-	import codecs
-	print('*** {} ***'.format(fn))
-	#with open(fn, 'r', encoding='utf-8') as f:
-	f = codecs.open(fn, 'r',encoding='utf-8')
-	if f:
-		s = f.read()
-		f.close()
-		result = do_str(s)
-	else:
-		result = None
-	return result
+	sl = []
+	if name:
+		sl.append('package {}'.format(name))
+	open_l = pv.get('open',[])
+	for open in open_l:
+		if isinstance(open,str):
+			sl.append('open {};'.format(open))
+		else:
+			assert open[0] == '::'
+			sl.append('open {};'.format('::'.join(open[1:])))
+	for dn in sorted(pv):
+		if dn in ('','open','package','private','#') or dn[0] == ' ': continue
+		dv = pv[dn]
+		sl.extend(decl(dn,dv))
+	pack_d = pv.get('package',{})
+	for pn in sorted(pack_d):
+		sl.extend(chk_pack(pn,pack_d[pn]))
+	if name:
+		sl.append('end;')
+	return sl
 
 G_pack = None
 
 def do_str(s):
 	""
 	global G_pack
-	G_pack = lp.parser.parse(s, debug=False)
-	for dn,dv in G_pack.items():
-		if dn in ('','open','package','private','#') or dn[0] == ' ': continue
-		decl(dn,dv)
-	return G_pack
+	G_pack = lp.parser.parse(s, debug=False) 
+	return chk_pack(None, G_pack)
+
+def do_file(fn):
+	""
+	import codecs
+	#with open(fn, 'r', encoding='utf-8') as f:
+	f = codecs.open(fn, 'r',encoding='utf-8')
+	if f:
+		s = f.read()
+		f.close()
+		sl = do_str(s)
+	else:
+		sl = ["/* can't open {} */".format(fn)]
+	return sl
 
 if __name__ == "__main__":
-	for fn in ( \
+	for i,fn in enumerate(( \
+		'lustre_namespace_OK.scade', \
 		'lustre_test_typ_OK.scade', \
 		r'F:\scade\Cas_etude_SafranHE_2_ATCU_S1905\MODEL\cvob_arrano1g4\c90100_modele\PAR\determiner_modes_generaux\sc\C_determiner_modes_generaux_KCG64\kcg_xml_filter_out.scade', \
 		r'F:\scade\Cas_etude_SafranHE_2_ATCU_S1905\MODEL\cvob_arrano1g4\c90100_modele\PAR\calculer_limites_et_regimes\sc\C_calculer_limites_et_regimes_KCG64\kcg_xml_filter_out.scade', \
@@ -476,6 +552,9 @@ if __name__ == "__main__":
 		'test/scheduling/kcg_xml_filter_out_2.scade', \
 		'test/scheduling/kcg_xml_filter_out_3.scade', \
 		'test/scheduling/kcg_xml_filter_out.scade', \
-		):
-		result = do_file(fn)
-		_ = 2+2
+		)[:]):
+		print('*** {} ***'.format(fn))
+		sl = do_file(fn)
+		fd = open('tmp{}.scade'.format(i),'w')
+		fd.writelines(s+'\n' for s in sl)
+		fd.close()
