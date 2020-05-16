@@ -93,11 +93,11 @@ decl_cpt = 0
 
 def p_actions(p):
 	"actions : DO data_def"
-	p[0] = NotImplemented
+	p[0] = p[2]
 	
 def p_arrow(p):
 	"arrow : actions_OPT fork"
-	p[0] = NotImplemented
+	p[0] = p[1:]
 
 # def p_atom_for_cast(p):
 # 	"""atom_for_cast : ID
@@ -196,7 +196,7 @@ def p_emission_body(p):
 	"""emission_body : NAME if_expr_OPT
 		| '(' NAME_SEQ ')' if_expr_OPT
 	"""
-	p[0] = [p[2], p[4]] if len(p)>=5 else p[1:]
+	p[0] = [p[2], p[4]] if len(p)>=5 else [[p[1]], p[2]]
 						
 def p_eqs(p):
 	"eqs : LET equation_SC_STAR TEL"
@@ -507,7 +507,7 @@ def p_fork(p):
 	"""fork : target
 		| IF expr arrow elsif_fork_STAR else_fork_OPT END
 	"""
-	p[0] = p[1]
+	p[0] = p[1] if len(p)==2 else p[1:6]
 
 def p_group_block(p):
 	"group_block : GROUP group_decl_SC_STAR"

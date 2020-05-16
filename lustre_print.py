@@ -38,6 +38,61 @@ def clkprb(vn,vt):
 			vn = 'clock '+vn
 	return vn
 
+def control_if(l):
+	""
+	assert len(l) == 4
+	e_s, _ = chk_expr(l[1])
+	sl = ['if '+e_s]
+	for b, b_s in zip(l[2:],('then','else')):
+		sl.append(b_s)
+		if isinstance(b, list):
+			if b[0] == 'if':
+				sl.extend(control_if(b))
+				continue
+			else:
+				assert b[0] == '='
+				b = {'let':[b]}
+		sl.extend(scope(b))
+	return sl
+
+def arrow(a):
+	""
+	sl = []
+	if True:
+		actions_OPT, fork = a
+		if actions_OPT:
+			assert isinstance(actions_OPT,dict)
+			sl.append('do')
+			sl.extend(scope(actions_OPT))
+		assert isinstance(fork,list)
+		if len(fork) == 2: # restart / resume
+			sl.append(' '.join(fork))
+		else:
+			assert fork[0] == 'if'
+			e, arr, elsif_fork_STAR, else_fork_OPT = fork[1:]
+			e_s,_ = chk_expr(e)
+			sl.append('if '+e_s)
+			sl.extend(arrow(arr))
+			for e, arr in elsif_fork_STAR:
+				e_s,_ = chk_expr(e)
+				sl.append('elsif '+e_s)
+				sl.extend(arrow(arr))
+			if else_fork_OPT:
+				sl.append('else')
+				sl.extend(arrow(else_fork_OPT))
+			sl.append('end')
+	return sl
+	
+def transitions(tl):
+	""
+	sl = []
+	for e, arr in tl: # IF expr arrow
+		e_s,_ = chk_expr(e)
+		sl.append('if '+e_s)
+		sl.extend(arrow(arr))
+		sl.append(';')
+	return sl
+
 def scope(d):
 	""
 	body_l = []
@@ -58,7 +113,9 @@ def scope(d):
 					assert len(eq) in (3,4), eq
 					lhs = eq[1]
 					assert isinstance(lhs,list), lhs
-					lhs_s = ','.join(lhs)
+					if lhs == ['_L742']:
+						_ = 2+2
+					lhs_s = ','.join(lhs) if lhs else '()'
 					rhs = eq[2]
 					rhs_s,_ = chk_expr(rhs)
 					if len(eq) == 4:
@@ -66,34 +123,28 @@ def scope(d):
 					body_l.append('  {}= {};'.format(lhs_s,rhs_s))
 				elif eq[0] == 'activate': # ACTIVATE ID_OPT if_ou_match_block
 					assert len(eq) == 4 and (eq[1] == None or eq[1].isidentifier()), eq
+					eq_s = 'activate '
+					if eq[1]: eq_s += eq[1] + ' '
 					if eq[2][0] == 'if':
-						e_s, _ = chk_expr(eq[2][1])
-						bl = eq[2][2:]
-						assert len(bl)==2, bl
-						for b in bl:
-							if isinstance(b, list):
-								assert b[0] in ('=','if'), b
-							else:
-								assert isinstance(b,dict)
-								# var
-								for c in b.get('let',[]):  ## parfois absent ????
-									assert isinstance(c,list) and c[0] in ('=','activate'), c
-						_ = 2+2
+						sl = control_if(eq[2])
+						sl[0] = eq_s + sl[0]
+						body_l.extend(sl)
 					elif eq[2][0] == 'when':
+						assert len(eq[2]) == 3
 						e_s, _ = chk_expr(eq[2][1])
+						eq_s += 'when '+e_s+' match'
+						body_l.append(eq_s)
 						for a,b in eq[2][2]:
 							assert a.isidentifier(), a
-							a_s,_ = chk_expr(a)
+							body_l.append('  | {} :'.format(a))
 							if isinstance(b,list):
 								assert b[0] == '=', b
-							else:
-								assert isinstance(b,dict)
-								# var
-								for c in b.get('let',[]):  ## parfois absent ????
-									assert isinstance(c,list) and c[0] in ('=','activate'), c
+								b = {'let':[b]}
+							sl = scope(b)
+							body_l.extend(sl)
 					else:
 						assert False, eq
-					# assert all((v in out_env or v in var_env or v=='..') for v in eq[3]), eq
+					body_l.append('  returns {};'.format(','.join(eq[3])))
 				elif eq[0] in ('assume','guarantee'):
 					assert len(eq) == 3 and eq[1].isidentifier(), eq
 					e_s,_ = chk_expr(eq[2])
@@ -107,13 +158,23 @@ def scope(d):
 						if fin_opt: s = 'final '+s
 						if ini_opt: s = 'initial '+s
 						body_l.append(s)
+						if unless_opt:
+							body_l.append('unless')
+							body_l.extend(transitions(unless_opt))
 						sl = scope(data_def)
 						body_l.extend(sl)
+						if until_opt:
+							body_l.append('until')
+							trans_STAR, synchro_OPT = until_opt
+							assert synchro_OPT is None
+							body_l.extend(transitions(trans_STAR))
 					#assert all((v in out_env or v in var_env or v=='..') for v in eq[3]), eq
 					body_l.append('  returns {};'.format(','.join(eq[3])))
 				elif eq[0] == 'emit':
 					assert len(eq) == 2, eq
-					_ = 2+2
+					name_l, if_expr_opt = eq[1]
+					assert if_expr_opt is None
+					body_l.append('emit {};'.format(','.join(name_l)))
 				else:
 					assert False
 			if signal or var or len(let) > 1:
@@ -129,15 +190,13 @@ def decl(name, d): # const function group node package sensor type
 	['type', pragmas, ext, def, kind]
 	"""
 	sl = []
-	if name == 'util_ClockCounter':
+	if name == 'StateMachine_1':
 		_ = 2+2
 	assert isinstance(d,dict), (name, d)
 	kind = d['']
 	private = 'private' in d
 	imported = 'imported' in d
 	pragmas = d.get('#',[])
-	if name=='correct':
-		_ = 2+2 ## debug
 	if kind == 'const':
 		assert {'','type'} <= set(d) <= {'','type','value','private','imported','#'}
 		typ = d['type']
@@ -156,7 +215,9 @@ def decl(name, d): # const function group node package sensor type
 		expand = any([pragma==('kcg','expand') for pragma in pragmas])
 		size_decl = d.get('sizes',[])
 		sizes_s = '<<'+','.join(size_decl)+'>>' if size_decl else ''
-		d_s = '{}{} {}{}'.format(kind, ' imported' if imported else '', name, sizes_s)
+		d_s = '{}{}{} {}{}'.format(kind, \
+			 ' #pragma kcg expand #end' if expand else '', \
+			 ' imported' if imported else '', name, sizes_s)
 		p_in = d['inputs']
 		inputs_s = '; '.join(clkprb(vn,vt) + ' : ' + chk_type_expr(vt) for vn,vt in p_in)
 		p_out = d['outputs']
@@ -179,6 +240,8 @@ def decl(name, d): # const function group node package sensor type
 			assert let is not None
 			sl.append(d_s)
 			body_l = scope(d)
+			if let == []:
+				body_l.append('let tel;')
 			sl.extend(body_l)
 	elif kind == 'group':
 		assert sorted(d) == ['','types'], sorted(d)
@@ -270,14 +333,11 @@ def chk_expr(e, upper_prec = None):
 				assert len(op) == 3
 				e1_s,_ = chk_expr(op[1])
 				e2_s, _ = chk_expr(op[2])
-				op_s = '(restart {} {})'.format(e1_s,e2_s)
+				op_s = '(restart {} every {})'.format(e1_s,e2_s)
 			else:
 				assert False, e
 			assert nb_inp == -1 or nb_inp == len(e)-1
-			e_s = op_s+'('
-			for x in e[1:]:
-				e_s += chk_expr(x)[0] + ','
-			e_s = e_s[:-1] + ')'
+			e_s = '{}({})'.format(op_s, ','.join(chk_expr(x)[0] for x in e[1:]))
 		elif op == '::':
 			assert len(e) >= 3
 			e_s = '::'.join(e[1:])
@@ -336,10 +396,13 @@ def chk_expr(e, upper_prec = None):
 			assert len(e)==5 and e[1]==None
 			expr, dim1, dim2 = tuple(e[2:])
 			assert isinstance(expr,list) and isinstance(dim1,list) and isinstance(dim2,list)
-			assert len(expr)==1 and len(dim1)==1 and len(dim2)==1
+			assert len(expr)==len(dim1)==len(dim2)==1
 			if dim1[0]+dim2[0] != 3:
 				assert False
-			chk_expr(expr[0])
+			expr_s,_ = chk_expr(expr[0])
+			dim1_s,_ = chk_expr(dim1[0])
+			dim2_s,_ = chk_expr(dim2[0])
+			e_s = 'transpose({};{};{})'.format(expr_s, dim1_s, dim2_s)
 		elif op == '.':
 			assert len(e)==4 and e[1]==None
 			e_s = chk_expr(e[2])[0] + '.' + e[3]
@@ -423,7 +486,7 @@ def chk_expr(e, upper_prec = None):
 	else:
 		assert False, e
 	if e_s is None:
-		_ = 2+2
+		assert False, e
 	if upper_prec is not None and prec is not None and upper_prec < prec:
 		e_s = '('+e_s + ')'
 	return e_s, prec
