@@ -1,6 +1,7 @@
 import lustre_par as lp
 import lustre_print
 from copy import deepcopy
+from collections import ChainMap
 
 def depend_eq_list(eq_l):
 	""
@@ -121,15 +122,15 @@ def simplify(fd):
 	in_d = dict(fd['inputs'])
 	out_d = dict(fd['outputs'])
 	var_d = fd.get('var',{})
-	wir_d = {k:v for k,v in var_d.items() if k[0]=='_'}
+	env_d = ChainMap(var_d,in_d,out_d)
 	defines_d = {}
 	is_defined_at = {}
 	is_defined_by = {}
 	eq_l = fd['let']
-	# phase 1 : suppression des locales
+	# 
 	for eq_i, eq in enumerate(eq_l):
 		if eq[0] == '=':
-			if len(eq[1])==1 and eq[1][0]!='_' and isinstance(eq[2],str):
+			if len(eq[1])==1 and eq[1][0]!='_' and isinstance(eq[2],str) and eq[2] in env_d:
 				a = eq[1][0]
 				is_defined_at[a] = eq_i
 				b = eq[2]
@@ -149,7 +150,7 @@ def simplify(fd):
 		assert base not in out_d
 		EQ_out = [x for x in EQ if x in out_d]
 		EQ = [x for x in EQ if x not in out_d]
-		# on detruit les locales non base
+		# phase 1 on detruit les locales non base
 		subst = {v:base for v in EQ}
 		for v in EQ:
 			del var_d[v]
@@ -157,7 +158,7 @@ def simplify(fd):
 		for eq_i, eq in enumerate(eq_l):
 			if eq[0] == '=':
 				eq[2] = substitute(eq[2], subst)
-		#
+		# phase 2
 		if EQ_out and base not in in_d:
 			del var_d[base]
 			fst_out = EQ_out[0]

@@ -4,7 +4,7 @@ import lustre_par as lp
 import lustre_path; from lustre_path import get_pack_at_absolute_path, path_resolution
 import lustre_print
 import lustre_util
-from lustre_util import substitute
+from lustre_util import substitute, simplify_pack
 import toposort as ts
 from collections import ChainMap
 from copy import deepcopy
@@ -75,6 +75,7 @@ def do_str(s, fun):
 	global G_pack
 	G_pack = lp.parser.parse(s, debug=False)
 	lustre_chk.chk_main(G_pack)
+	G_pack = simplify_pack(G_pack)
 	fd0 = deepcopy(G_pack[fun])
 	fd1 = expand_fun(fd0)
 	sl = lustre_print.chk_pack(None,{fun+'_expand':fd1})
@@ -206,8 +207,10 @@ def expand_scope(op_def, info=[]):
 	""
 	#global array_constructed, array_destructed
 	array_d = {}
+	in_d = {k:v for k,v in op_def['inputs'] if isinstance(k,str)}; out_d = dict(op_def['outputs'])
 	var_d = op_def['var']; new_var_d = var_d.copy()
 	eq_l = op_def['let']; new_eq_l = eq_l.copy()
+	env_d = ChainMap(var_d, in_d, out_d)
 	patch_l = []
 	l2ls_l = lustre_util.depend_eq_list(eq_l)
 	r = ts.toposort_flatten(dict(enumerate(l2ls_l)))
@@ -252,14 +255,14 @@ def expand_scope(op_def, info=[]):
 							x_op_def = instanciate_fun(x_op_def, op[1][2:])
 							if op[1][1] == 'vect_add':
 								assert op[0] == 'map', eq
-								ty = var_d[pl[0]]
+								ty = env_d[pl[0]]
 								assert ty[:2] == ['^','int32'], eq
 								x_op_def = substitute(x_op_def,{"'T":'int32'})
 						elif op[1].isidentifier():
 							x_op_def = deepcopy(G_pack[op[1]])
 							if op[1] == 'util_if_then_else':
 								assert op[0] == 'map', eq
-								ty = var_d[pl[1]]
+								ty = env_d[pl[1]]
 								assert ty[0] == '^' and ty[1] in ('bool','int32'), eq
 								x_op_def = substitute(x_op_def,{"'T":ty[1]})
 						else:
@@ -267,7 +270,7 @@ def expand_scope(op_def, info=[]):
 							x_op_def = make_def(op[1])
 							if op[1] in ('$=$','$<>$'): # polymorphic
 								assert op[0] == 'map', eq
-								ty = var_d[pl[0]]
+								ty = env_d[pl[0]]
 								assert ty[:2] == ['^','int32'], eq
 								x_op_def = substitute(x_op_def,{"'T":'int32'})
 						if iter in ('map','mapi'):
