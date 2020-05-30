@@ -606,6 +606,9 @@ def do_file(fn):
 	return sl
 
 if __name__ == "__main__":
+	# Unit test
+	#print(chk_expr(['+',]))
+	# global test
 	for i,fn in enumerate(( \
 		'lustre_namespace_OK.scade', \
 		'lustre_test_typ_OK.scade', \
@@ -614,6 +617,7 @@ if __name__ == "__main__":
 		'test/scheduling/kcg_xml_filter_out_1.scade', \
 		'test/scheduling/kcg_xml_filter_out_2.scade', \
 		'test/scheduling/kcg_xml_filter_out_3.scade', \
+		'test/scheduling/kcg_xml_filter_out_4.scade', \
 		'test/scheduling/kcg_xml_filter_out.scade', \
 		)[:]):
 		print('*** {} ***'.format(fn))
