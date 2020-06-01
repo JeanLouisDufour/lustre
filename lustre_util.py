@@ -11,7 +11,7 @@ def depend_eq_list(eq_l):
 		ins,outs = depend_eq(eq)
 		l2vs_l[eq_i] = ins
 		for v in outs:
-			assert v not in v2l_d
+			assert v not in v2l_d, v
 			v2l_d[v] = eq_i
 	for i in range(len(eq_l)):
 		l2ls_l[i] = set(v2l_d.get(v,-1) for v in l2vs_l[i])
