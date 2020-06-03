@@ -211,7 +211,8 @@ def decl(name, d): # const function group node package sensor type
 		sl.append(d_s)
 	elif kind in ('function','node'):
 		#  ID pragmas interface_status  size_decl_OPT p_in p_out where_decl_OPT spec_decl_OPT opt_body
-		assert {'','inputs','outputs','_lineno','inputs_linenos','outputs_linenos'} <= set(d)
+		# assert {'','inputs','outputs','_lineno','inputs_linenos','outputs_linenos'} <= set(d)
+		assert {'','inputs','outputs'} <= set(d)
 		expand = any([pragma==('kcg','expand') for pragma in pragmas])
 		size_decl = d.get('sizes',[])
 		sizes_s = '<<'+','.join(size_decl)+'>>' if size_decl else ''

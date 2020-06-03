@@ -21,23 +21,6 @@ def smooth_update(d, ud):
 	for k,v in ud.items():
 		smooth_setitem(d,k,v)
 
-def do_file(fn, fun):
-	""
-	import codecs
-	print('*** {} ***'.format(fn))
-	#with open(fn, 'r', encoding='utf-8') as f:
-	f = codecs.open(fn, 'r',encoding='utf-8')
-	if f:
-		s = f.read()
-		f.close()
-		result = do_str(s, fun)
-		f = codecs.open('expand.scade', 'w',encoding='utf-8')
-		f.writelines(s+'\n' for s in result)
-		f.close()
-	else:
-		result = None
-	return result
-
 has_none = {'-$','$+$','$-$','$*$'}
 has_none = {'+','-','-unaire','*','/','^','(','[','if','with','.default',':','.[.]'}
 def make_def(op):
@@ -70,17 +53,6 @@ def make_def(op):
 	return op_def
 
 G_pack = []
-
-def do_str(s, fun):
-	""
-	global G_pack
-	G_pack = lp.parser.parse(s, debug=False)
-	lustre_chk.chk_main(G_pack)
-	G_pack = simplify_pack(G_pack)
-	fd0 = deepcopy(G_pack[fun])
-	fd1 = expand_fun(fd0)
-	sl = lustre_print.chk_pack(None,{fun+'_expand':fd1})
-	return sl
 
 def type_expr(e,fd):
 	""
@@ -434,6 +406,7 @@ def expand_scope(op_def, info=[]):
 					assert not ty_out_has_arrays
 					assert len(e)==5 and e[1] is None
 					w_arr = e[2]
+					assert w_arr in G_array_d, w_arr
 					assert len(e[3])==1 and e[3][0][0] == '[',e
 					w_idx = e[3][0][1]
 					w_default = e[4]
@@ -515,8 +488,10 @@ def expand_scope(op_def, info=[]):
 						patch_l.append((eq_i, new_var, new_let))
 					else:
 						assert False, eq
+				elif op == '.[.]':
+					assert e[2] in G_array_d, eq
 				else:  # [ < >= ^ (
-					assert op in {'[', '=','<>','<','<=','>','>=','+','-','-unaire', '(','.default','.[.]'}, e
+					assert op in {'[', '=','<>','<','<=','>','>=','+','-','-unaire', '(','.default'}, e
 				_ = 2+2
 			elif isinstance(e,str):
 				if e.isidentifier():
@@ -539,6 +514,51 @@ def expand_scope(op_def, info=[]):
 		new_eq_l.extend(new_let)
 		_ = 2+2
 	return new_var_d, new_eq_l
+
+def make_test(fd,fn):
+	""
+	fd1 = {'':'function','inputs': fd['inputs'],'outputs' : [['ok','bool']]}
+	fd1['var'] = {k+'__1':t for k,t in fd['outputs']}
+	fd1['var'].update({k+'__2':t for k,t in fd['outputs']})
+	fd1['let'] = [
+		['=',[k+'__1' for k,_ in fd['outputs']], [fn]+[k for k,_ in fd['inputs']]],
+		['=',[k+'__2' for k,_ in fd['outputs']], [fn+'_expand']+[k for k,_ in fd['inputs']]],
+		['=',['ok'],['=','ok__1','ok__2']]
+	]
+	return fd1
+
+def do_str(s, fun):
+	""
+	global G_pack
+	G_pack = lp.parser.parse(s, debug=False)
+	lustre_chk.chk_main(G_pack)
+	G_pack = simplify_pack(G_pack)
+	fd0 = deepcopy(G_pack[fun])
+	fd1 = expand_fun(fd0)
+	sl = lustre_print.chk_pack(None,{fun+'_expand':fd1})
+	fd2 = make_test(fd0, fun)
+	sl2 = lustre_print.chk_pack(None,{'test':fd2})
+	return fd1, sl, sl2
+
+def do_file(fn, fun):
+	""
+	import codecs
+	print('*** {} ***'.format(fn))
+	#with open(fn, 'r', encoding='utf-8') as f:
+	f = codecs.open(fn, 'r',encoding='utf-8')
+	if f:
+		s = f.read()
+		f.close()
+		_, sl,sl2 = do_str(s, fun)
+		f = codecs.open('expand.scade', 'w',encoding='utf-8')
+		f.writelines(s+'\n' for s in sl)
+		f.close()
+		f = codecs.open('expand_test.scade', 'w',encoding='utf-8')
+		f.writelines(s+'\n' for s in sl2)
+		f.close()
+	else:
+		sl = []
+	return sl
 
 if __name__ == "__main__":
 	for fn, fun in ( \
