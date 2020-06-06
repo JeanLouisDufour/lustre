@@ -199,8 +199,12 @@ def INH_expand_fun(fd):
 	fd1['var'],fd1['let'] = expand_scope(fd)
 	return fd1
 
+G_const = None
+
 def expand_fun(fd):
 	""
+	global G_const
+	G_const = set()
 	new_var = {}
 	new_let = []
 	for i,(v,t) in enumerate(fd['inputs']):
@@ -215,13 +219,13 @@ def expand_fun(fd):
 	fd['let'].extend(new_let)
 	fd1 = fd.copy()
 	fd1['var'],fd1['let'] = expand_scope(fd)
-	return fd1
+	return fd1, sorted(G_const)
 
 #array_constructed = {}
 #array_destructed = {}
 def expand_scope(op_def, info=[]):
 	""
-	global G_array_d
+	global G_array_d, G_const
 	in_d = {k:v for k,v in op_def['inputs'] if isinstance(k,str)}; out_d = dict(op_def['outputs'])
 	var_d = op_def['var']; new_var_d = var_d.copy()
 	eq_l = op_def['let']; new_eq_l = eq_l.copy()
@@ -244,7 +248,7 @@ def expand_scope(op_def, info=[]):
 			ty_out_has_arrays = any(n != 0 for n in ty_out_ndim)
 			if ty_out_has_arrays:
 				_ = 2+2
-			if eq[1] == ['remaining_load_of_prio']:
+			if eq[1] == ['_L205']:
 				_ = 2+2
 			e = eq[2]
 			if isinstance(e, list):
@@ -272,7 +276,7 @@ def expand_scope(op_def, info=[]):
 						assert pin_t[0]=='^'
 						if isinstance(pin, str):
 							if not(pin in G_array_d):
-								assert False, (pin, eq)
+								assert False, (pin, eq, info)
 				if isinstance(op, list):
 					assert all(isinstance(p,str) or isinstance(p,int) or p==['-unaire', None, 1] for p in pl), eq
 					if op[0] == '<<>>':
@@ -494,10 +498,22 @@ def expand_scope(op_def, info=[]):
 					assert op in {'[', '=','<>','<','<=','>','>=','+','-','-unaire', '(','.default'}, e
 				_ = 2+2
 			elif isinstance(e,str):
-				if e.isidentifier():
-					pass # assert e in env_d, e
-				else:
-					assert False, e
+				assert e.isidentifier(), e
+				if e in G_pack:
+					assert G_pack[e][''] == 'const', e
+					G_const.add(e)
+				if ty_out_has_arrays:
+					ty_in = G_pack[e]['type']
+					assert ty_in == ty_out[0]
+					# idem inputs
+					v = eq[1][0]
+					assert v not in G_array_d, v
+					ty,sz = ty_in[1:]
+					new_var = {v+'__'+str(i):ty for i in range(sz)}
+					new_let = [['=', [v+'__'+str(i)], ['.[.]',None, e,i]] for i in range(sz)]
+					new_let.append(['=',[v],['[',None, [v+'__'+str(i) for i in range(sz)]]])
+					G_array_d[v] = ty_in
+					patch_l.append((eq_i, new_var, new_let))
 			elif isinstance(e,int):
 				pass
 			else:
@@ -509,7 +525,7 @@ def expand_scope(op_def, info=[]):
 		new_eq_l[eq_i] = ['assume','ASSUME'+str(new_cnt()),"true"]
 		inter = set(new_var_d) & set(new_var)
 		if inter != set():
-			_ = 2+2
+			assert False, list(inter)
 		smooth_update(new_var_d, new_var)
 		new_eq_l.extend(new_let)
 		_ = 2+2
@@ -527,16 +543,23 @@ def make_test(fd,fn):
 	]
 	return fd1
 
-def do_str(s, fun):
+def do_pack(pack,fun):
 	""
 	global G_pack
-	G_pack = lp.parser.parse(s, debug=False)
-	lustre_chk.chk_main(G_pack)
-	G_pack = simplify_pack(G_pack)
-	fd0 = deepcopy(G_pack[fun])
-	fd1 = expand_fun(fd0)
-	sl = lustre_print.chk_pack(None,{fun+'_expand':fd1})
+	G_pack = pack
+	fd0 = deepcopy(pack[fun])
+	fd1, const_l = expand_fun(fd0)
 	fd2 = make_test(fd0, fun)
+	return fd1, const_l, fd2
+
+def do_str(s, fun):
+	""
+	#global G_pack
+	pack = lp.parser.parse(s, debug=False)
+	lustre_chk.chk_main(pack)
+	pack = simplify_pack(pack)
+	fd1,_,fd2 = do_pack(pack,fun)
+	sl = lustre_print.chk_pack(None,{fun+'_expand':fd1})
 	sl2 = lustre_print.chk_pack(None,{'test':fd2})
 	return fd1, sl, sl2
 
@@ -562,7 +585,7 @@ def do_file(fn, fun):
 
 if __name__ == "__main__":
 	for fn, fun in ( \
-		('test/scheduling/kcg_xml_filter_out.scade','mc_20times_2cores_4tasks'), \
+		('test/scheduling/kcg_xml_filter_out.scade','mc_20times_2corexs_4tasks'), \
 		):
 		result = do_file(fn, fun)
 		_ = 2+2

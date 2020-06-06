@@ -176,10 +176,13 @@ def simplify_pack(pack):
 	r_pack = {}
 	for k in sorted(pack):
 		if k.isidentifier() and k not in ('package','open'):
-			# print(k)
 			fd = pack[k]
-			fd1 = simplify(fd)
-			r_pack[k] = fd1
+			kind = fd['']
+			if kind in ('function','node'):
+				fd = simplify(fd)
+			r_pack[k] = fd
+		else:
+			r_pack[k] = pack[k]
 	return r_pack
 
 G_pack = None
