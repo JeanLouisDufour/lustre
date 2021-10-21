@@ -269,7 +269,7 @@ def list_inputs(fd):
 				ntl.append((v+'__'+str(i),typ(t[1])))
 	return ntl
 
-def do_file(fn, fun):
+def do_file(fn, fun_l):
 	""
 	import codecs
 	print('*** {} ***'.format(fn))
@@ -281,7 +281,11 @@ def do_file(fn, fun):
 		pack = lp.parser.parse(s, debug=False)
 		lustre_chk.chk_main(pack)
 		pack = lustre_util.simplify_pack(pack)
-		fd,const_l,_ = lustre_expand.do_pack(pack,fun)
+		fun1,fun2 = fun_l
+		fd1,const_l1,_ = lustre_expand.do_pack(pack,fun1)
+		fd2,const_l2,_ = lustre_expand.do_pack(pack,fun2)
+		assert set(const_l1) >= set(const_l2)
+		const_l = const_l1
 		smtobj = smtlib('QF_LIA')
 		smtobj.setOption(':produce-models','true')
 		const_d = {c:pack[c]['type'] for c in const_l}
@@ -305,20 +309,26 @@ def do_file(fn, fun):
 			smtobj.checkSat()
 			smtobj.getValue(['offset_of_task_IN__'+str(i) for i in range(4)])
 		else:
-			ntl = list_inputs(fd)
-			for n,t in ntl:
+			# 1
+			ntl1 = list_inputs(fd1)
+			for n,t in ntl1:
 				smtobj.declareConst(n,t)
-			_ = do_it_as_fun(fun,fd,'ok',const_d,smtobj)
-			smtobj.Assert([fun]+[n for n,_ in ntl])
+			_ = do_it_as_fun(fun1,fd1,'ok',const_d,smtobj)
+			# 2
+			ntl2 = list_inputs(fd2)
+			assert set(v for v,_ in ntl2) <= set(v for v,_ in ntl1)
+			_ = do_it_as_fun(fun2,fd2,'ok',const_d,smtobj)
+			# 
+			smtobj.Assert(['not',['=>',[fun1]+[n for n,_ in ntl1],[fun2]+[n for n,_ in ntl2]]])
 			smtobj.checkSat()
-			smtobj.getValue([n for n,_ in ntl])
+			smtobj.getValue([n for n,_ in ntl1])
 		smtobj.to_file('expand')
 	else:
 		print('pb')
 
 if __name__ == "__main__":
 	for fn, fun in ( \
-		('test/scheduling/kcg_xml_filter_out.scade','mc_20times_2cores_4tasks'), \
+		('test/scheduling/kcg_xml_filter_out.scade',['mc_20times_2cores_4tasks','mc_20times_2corexs_4tasks']), \
 		):
 		result = do_file(fn, fun)
 		_ = 2+2

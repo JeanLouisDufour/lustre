@@ -545,8 +545,9 @@ def make_test(fd,fn):
 
 def do_pack(pack,fun):
 	""
-	global G_pack
+	global G_pack, G_array_d
 	G_pack = pack
+	G_array_d = {}
 	fd0 = deepcopy(pack[fun])
 	fd1, const_l = expand_fun(fd0)
 	fd2 = make_test(fd0, fun)
@@ -585,7 +586,8 @@ def do_file(fn, fun):
 
 if __name__ == "__main__":
 	for fn, fun in ( \
-		('test/scheduling/kcg_xml_filter_out.scade','mc_20times_2corexs_4tasks'), \
+		#('test/scheduling/kcg_xml_filter_out.scade','mc_20times_2corexs_4tasks'), \
+		('test/scheduling/kcg_xml_filter_out.scade','mc_20ti_2co_4ta_th0'), \
 		):
 		result = do_file(fn, fun)
 		_ = 2+2

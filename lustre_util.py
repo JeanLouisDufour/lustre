@@ -31,7 +31,7 @@ def depend_eq(eq):
 
 def depend_expr(e):
 	""
-	s = set()
+	s = set(); ops = set() # TBC
 	if isinstance(e,list):
 		op = e[0] ### il n'y a jamais de variable dans un operateur
 		if isinstance(op,list):
